@@ -188,8 +188,8 @@ $heroImage = getSystemSetting($pdo, 'hero_image', 'assets/foto/foto landing page
                         <input type="number" name="quantity" class="form-control" min="1" value="1" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Nama / Meja (opsional)</label>
-                        <input type="text" name="customer_name" class="form-control" placeholder="Contoh: Budi / Meja 3">
+                        <label class="form-label">Nama Pelanggan (opsional)</label>
+                        <input type="text" name="customer_name" class="form-control" placeholder="Contoh: Budi">
                     </div>
                 </div>
                 <div class="modal-footer">

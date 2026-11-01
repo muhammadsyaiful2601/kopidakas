@@ -25,15 +25,34 @@ CREATE TABLE IF NOT EXISTS products (
 ) ENGINE=InnoDB;
 
 -- Tabel orders (PRD: id, customer_name, product_id FK, quantity, status ENUM, created_at)
+-- Status: pending = belum diproses, completed = selesai (stok dikurangi), cancelled = dibatalkan (stok dikembalikan jika sudah selesai)
 CREATE TABLE IF NOT EXISTS orders (
     id INT AUTO_INCREMENT PRIMARY KEY,
     customer_name VARCHAR(100),
     product_id INT NOT NULL,
     quantity INT NOT NULL DEFAULT 1,
-    status ENUM('pending','completed') NOT NULL DEFAULT 'pending',
+    status ENUM('pending','completed','cancelled') NOT NULL DEFAULT 'pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+-- Jalankan perintah ini pada database yang SUDAH ada untuk menambahkan status 'cancelled':
+-- ALTER TABLE orders MODIFY COLUMN status ENUM('pending','completed','cancelled') NOT NULL DEFAULT 'pending';
+
+-- Tabel tiket pelanggan (customer support tickets)
+CREATE TABLE IF NOT EXISTS tickets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_name VARCHAR(100) NOT NULL,
+    customer_email VARCHAR(100) NULL,
+    subject VARCHAR(200) NOT NULL,
+    message TEXT NOT NULL,
+    status ENUM('open','in_progress','replied','closed') NOT NULL DEFAULT 'open',
+    admin_reply TEXT NULL,
+    replied_by VARCHAR(100) NULL,
+    replied_at TIMESTAMP NULL DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Tabel stock_movements (pelacakan stok masuk & keluar)
 CREATE TABLE IF NOT EXISTS stock_movements (

@@ -23,7 +23,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         } catch (PDOException $e) { $pdo->rollBack(); $message = 'Gagal: ' . htmlspecialchars($e->getMessage()); $messageType = 'danger'; }
     }
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'cancel') {
+    $orderId = filter_input(INPUT_POST, 'order_id', FILTER_VALIDATE_INT);
+    if ($orderId) {
+        try {
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("SELECT o.id, o.product_id, o.quantity, o.status, p.stock, p.name FROM orders o JOIN products p ON o.product_id = p.id WHERE o.id = ? FOR UPDATE");
+            $stmt->execute([$orderId]); $order = $stmt->fetch();
+            if (!$order) { $message = 'Pesanan tidak ditemukan.'; $messageType = 'danger'; $pdo->rollBack(); }
+            elseif ($order['status'] === 'cancelled') { $message = 'Pesanan sudah dibatalkan.'; $messageType = 'info'; $pdo->rollBack(); }
+            else {
+                $restoredStock = false;
+                if ($order['status'] === 'completed') {
+                    // Kembalikan stok yang telah dikurangi saat pesanan ditandai selesai
+                    $pdo->prepare("UPDATE products SET stock = stock + ? WHERE id = ?")->execute([(int)$order['quantity'], (int)$order['product_id']]);
+                    $pdo->prepare("INSERT INTO stock_movements (product_id, type, quantity, note) VALUES (?, 'in', ?, ?)")
+                        ->execute([(int)$order['product_id'], (int)$order['quantity'], 'Pengembalian stok pembatalan pesanan #' . (int)$orderId]);
+                    $restoredStock = true;
+                }
+                $pdo->prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?")->execute([$orderId]);
+                $message = 'Pesanan #' . (int)$orderId . ' dibatalkan.' . ($restoredStock ? ' Stok dikembalikan & tercatat sebagai barang masuk.' : ' (stok tidak berubah karena pesanan belum selesai / stok belum dikurangi).');
+                $messageType = 'success'; $pdo->commit();
+            }
+        } catch (PDOException $e) { $pdo->rollBack(); $message = 'Gagal: ' . htmlspecialchars($e->getMessage()); $messageType = 'danger'; }
+    }
+}
 $orders = $pdo->query("SELECT o.id, o.customer_name, p.name AS product_name, o.quantity, o.status, o.created_at FROM orders o JOIN products p ON o.product_id = p.id ORDER BY o.created_at DESC")->fetchAll();
+
+$statusLabel = ['pending' => 'Pending', 'completed' => 'Selesai', 'cancelled' => 'Dibatalkan'];
+$statusBadge = [
+    'pending'    => 'bg-amber-50 text-amber-700',
+    'completed'  => 'bg-emerald-50 text-emerald-700',
+    'cancelled'  => 'bg-rose-50 text-rose-700',
+];
+$statusIcon = ['pending' => 'clock', 'completed' => 'check-circle', 'cancelled' => 'x-circle'];
 ?>
 <!doctype html>
 <html lang="id">
@@ -117,7 +150,12 @@ $orders = $pdo->query("SELECT o.id, o.customer_name, p.name AS product_name, o.q
                 </thead>
                 <tbody class="divide-y divide-gray-100">
                     <?php if ($orders): foreach ($orders as $o): 
-                        $isCompleted = $o['status'] === 'completed';
+                        $status      = $o['status'];
+                        $isCompleted = $status === 'completed';
+                        $isCancelled = $status === 'cancelled';
+                        $label       = $statusLabel[$status] ?? ucfirst($status);
+                        $badge       = $statusBadge[$status] ?? 'bg-gray-50 text-gray-700';
+                        $icon        = $statusIcon[$status] ?? 'clock';
                     ?>
                     <tr class="hover:bg-gray-50 transition-colors">
                         <td class="px-6 py-4 border-b border-gray-100 text-gray-900 font-medium text-sm">#<?= (int)$o['id'] ?></td>
@@ -125,25 +163,41 @@ $orders = $pdo->query("SELECT o.id, o.customer_name, p.name AS product_name, o.q
                         <td class="px-6 py-4 border-b border-gray-100 text-gray-900 text-sm"><?= htmlspecialchars($o['product_name']) ?></td>
                         <td class="px-6 py-4 border-b border-gray-100 text-gray-900 font-medium text-sm"><?= (int)$o['quantity'] ?></td>
                         <td class="px-6 py-4 border-b border-gray-100">
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[0.7rem] font-semibold uppercase
-                                <?= $isCompleted ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700' ?>">
-                                <i class="bi bi-<?= $isCompleted ? 'check-circle' : 'clock' ?> [&>i]:text-[0.65rem]"></i>
-                                <?= ucfirst($o['status']) ?>
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[0.7rem] font-semibold uppercase <?= $badge ?>">
+                                <i class="bi bi-<?= $icon ?> [&>i]:text-[0.65rem]"></i>
+                                <?= htmlspecialchars($label) ?>
                             </span>
                         </td>
                         <td class="px-6 py-4 border-b border-gray-100 text-gray-500 text-sm"><?= date('d/m/Y H:i', strtotime($o['created_at'])) ?></td>
                         <td class="px-6 py-4 border-b border-gray-100">
-                            <?php if (!$isCompleted): ?>
-                            <form method="POST" action="orders.php" class="flex items-center gap-2" onsubmit="return confirm('Tandai selesai? Stok akan dikurangi.');">
-                                <input type="hidden" name="action" value="complete">
+                            <?php if ($status === 'pending'): ?>
+                            <div class="flex items-center gap-2">
+                                <form method="POST" action="orders.php" class="flex items-center gap-2" onsubmit="return confirm('Tandai selesai? Stok akan dikurangi.');">
+                                    <input type="hidden" name="action" value="complete">
+                                    <input type="hidden" name="order_id" value="<?= (int)$o['id'] ?>">
+                                    <button type="submit" class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white bg-brand-blue rounded-lg shadow-sm hover:bg-brand-blue-dark transition-colors">
+                                        <i class="bi bi-check-lg"></i> Selesai
+                                    </button>
+                                </form>
+                                <form method="POST" action="orders.php" class="flex items-center gap-2" onsubmit="return confirm('Batalkan pesanan ini?');">
+                                    <input type="hidden" name="action" value="cancel">
+                                    <input type="hidden" name="order_id" value="<?= (int)$o['id'] ?>">
+                                    <button type="submit" class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white bg-brand-red rounded-lg shadow-sm hover:bg-brand-red-dark transition-colors">
+                                        <i class="bi bi-x-lg"></i> Batalkan
+                                    </button>
+                                </form>
+                            </div>
+                            <?php elseif ($isCompleted): ?>
+                            <form method="POST" action="orders.php" class="flex items-center gap-2" onsubmit="return confirm('Batalkan pesanan ini? Stok yang telah dikurangi akan dikembalikan.');">
+                                <input type="hidden" name="action" value="cancel">
                                 <input type="hidden" name="order_id" value="<?= (int)$o['id'] ?>">
-                                <button type="submit" class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white bg-brand-blue rounded-lg shadow-sm hover:bg-brand-blue-dark transition-colors">
-                                    <i class="bi bi-check-lg"></i> Selesai
+                                <button type="submit" class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white bg-brand-red rounded-lg shadow-sm hover:bg-brand-red-dark transition-colors">
+                                    <i class="bi bi-x-lg"></i> Batalkan & Kembalikan Stok
                                 </button>
                             </form>
                             <?php else: ?>
-                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg">
-                                <i class="bi bi-check-circle"></i> Selesai
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 rounded-lg">
+                                <i class="bi bi-x-circle [&>i]:text-[0.65rem]"></i> Dibatalkan
                             </span>
                             <?php endif; ?>
                         </td>

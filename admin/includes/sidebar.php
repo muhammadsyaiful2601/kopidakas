@@ -46,6 +46,12 @@ $isActive = function (string $page) use ($currentPage): string {
             </a>
         </li>
         <li>
+            <a href="tickets.php" class="nav-item flex items-center gap-3 px-6 py-3.5 text-sm font-semibold <?= $isActive('tickets.php') ?>">
+                <i class="bi bi-chat-text w-5"></i>
+                Tiket Pelanggan
+            </a>
+        </li>
+        <li>
             <a href="stock.php" class="nav-item flex items-center gap-3 px-6 py-3.5 text-sm font-semibold <?= $isActive('stock.php') ?>">
                 <i class="bi bi-box-seam w-5"></i>
                 Kelola Stok
