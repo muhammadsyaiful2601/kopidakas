@@ -1,0 +1,4 @@
+RewriteEngine On
+
+# Friendly public login URL: /login -> /login.php
+RewriteRule ^login/?$ login.php [L]
